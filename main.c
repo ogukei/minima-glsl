@@ -10,26 +10,30 @@
 
 #include <time.h>
 
-const char *vertex_shader =
+static const char *vertex_shader =
 "#version 400\n"
 "in vec3 vp;"
 "void main() {"
 "  gl_Position = vec4(vp, 1.0);"
 "}";
 
-const char *fragment_shader =
+static const char *fragment_shader =
 "#version 400\n"
 "out vec4 color;"
 "uniform vec4 bounds;"
+"uniform float time;"
 "void main() {"
 "  vec2 v = gl_FragCoord.xy / bounds.zw;"
 "  vec2 c = vec2(0.5, 0.5);"
-"  float d = distance(c, v);"
-"  color = vec4(d, 0, 0, d);"
+"  float p = (cos(time * 2.0) + 1.0) * 0.5;"
+"  float d = distance(v, c) * 2.0;"
+"  float a = clamp(abs(p - d), 0, 1);"
+"  color = vec4(a, a, a, a);"
 "}";
 
 typedef struct {
 	GLuint bounds;
+	GLuint time;
 }
 ShaderParameters;
 
@@ -84,7 +88,7 @@ int main(void) {
 	CVDisplayLinkCreateWithCGDisplay(CGMainDisplayID(), &display);
 	CVDisplayLinkSetOutputCallback(display, &DisplayLinkCallback, environment);
 	CVDisplayLinkStart(display);
-	sleep(1);
+	sleep(7);
 	CVDisplayLinkStop(display);
 	return 0;
 }
@@ -103,6 +107,7 @@ static CVReturn DisplayLinkCallback(CVDisplayLinkRef display,
 
 	glClear(GL_COLOR_BUFFER_BIT);
 	glUniform4f(shader->bounds, 0, 0, CGRectGetWidth(bounds), CGRectGetHeight(bounds));
+	glUniform1f(shader->time, (float)time);
 	glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
 	CGLFlushDrawable(context);
 
@@ -164,7 +169,8 @@ static bool MakeGL(const char *vertex_shader_str, const char *fragment_shader_st
 
 static ShaderParameters MakeShaderParameters(GLuint program) {
 	return (ShaderParameters) {
-		.bounds = glGetUniformLocation(program, "bounds")
+		.bounds = glGetUniformLocation(program, "bounds"),
+		.time = glGetUniformLocation(program, "time")
 	};
 }
 
