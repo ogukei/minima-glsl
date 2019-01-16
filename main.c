@@ -10,14 +10,14 @@
 
 #include <time.h>
 
-static const char *vertex_shader =
+static const char *kVertexShader =
 "#version 400\n"
 "in vec3 vp;"
 "void main() {"
 "  gl_Position = vec4(vp, 1.0);"
 "}";
 
-static const char *fragment_shader =
+static const char *kFragmentShader =
 "#version 400\n"
 "out vec4 color;"
 "uniform vec4 bounds;"
@@ -27,7 +27,7 @@ static const char *fragment_shader =
 "  vec2 c = vec2(0.5, 0.5);"
 "  float p = (cos(time * 2.0) + 1.0) * 0.5;"
 "  float d = distance(v, c) * 2.0;"
-"  float a = clamp(abs(p - d), 0, 1);"
+"  float a = 1.0 - clamp(abs(p - d), 0, 1);"
 "  color = vec4(a, a, a, a);"
 "}";
 
@@ -51,7 +51,7 @@ static bool MakeGL(const char *vertex_shader_str,
 static ShaderParameters MakeShaderParameters(GLuint program);
 static bool MakeCGLContext(CGSConnectionID, CGSWindowID, CGRect, CGLContextObj *);
 static bool MakeWindow(CGSConnectionID, CGRect, CGSWindowID *);
-static CVReturn DisplayLinkCallback(CVDisplayLinkRef, const CVTimeStamp *, const CVTimeStamp *, 
+static CVReturn RenderFrame(CVDisplayLinkRef, const CVTimeStamp *, const CVTimeStamp *, 
 	CVOptionFlags, CVOptionFlags *, void *);
 
 int main(void) {
@@ -67,12 +67,13 @@ int main(void) {
 	CGContextFillRect(context, bounds);
 	CGContextFlush(context);
 	CGSOrderWindow(connection, window, kCGSWindowOrderingAbove, 0);
-	
+	CGSSetWindowLevel(connection, window, CGWindowLevelForKey(kCGOverlayWindowLevelKey));
+
 	CGLContextObj cgl_context;
 	MakeCGLContext(connection, window, bounds, &cgl_context);
 	CGLSetCurrentContext(cgl_context);
 	GLuint shader;
-	MakeGL(vertex_shader, fragment_shader, &shader);
+	MakeGL(kVertexShader, kFragmentShader, &shader);
 	ShaderParameters params = MakeShaderParameters(shader);
 	CGLSetCurrentContext(NULL);
 
@@ -86,15 +87,14 @@ int main(void) {
 
 	CVDisplayLinkRef display;
 	CVDisplayLinkCreateWithCGDisplay(CGMainDisplayID(), &display);
-	CVDisplayLinkSetOutputCallback(display, &DisplayLinkCallback, environment);
+	CVDisplayLinkSetOutputCallback(display, &RenderFrame, environment);
 	CVDisplayLinkStart(display);
 	sleep(7);
 	CVDisplayLinkStop(display);
 	return 0;
 }
 
-
-static CVReturn DisplayLinkCallback(CVDisplayLinkRef display, 
+static CVReturn RenderFrame(CVDisplayLinkRef display, 
 	const CVTimeStamp *time_now, const CVTimeStamp *time_output, 
 	CVOptionFlags inputs, CVOptionFlags *outputs, void *user_context) {
 	Environment *environment = user_context;
@@ -199,8 +199,8 @@ static bool MakeCGLContext(CGSConnectionID connection, CGSWindowID window, CGRec
 		kCGLPFAAlphaSize, 8,
 		kCGLPFADoubleBuffer,
 		kCGLPFAAccelerated,
-		kCGLPFASampleBuffers, 1,
-		kCGLPFASamples, 4,
+		//kCGLPFASampleBuffers, 1,
+		//kCGLPFASamples, 4,
 		(CGLPixelFormatAttribute)0
 	};
 	// Context Allocation

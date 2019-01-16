@@ -2,7 +2,7 @@
 #ifndef CGS_PRIVATE_H
 #define CGS_PRIVATE_H
 
-#include <Carbon/Carbon.h>
+#include <CoreGraphics/CGBase.h>
 #include <OpenGL/CGLTypes.h>
 
 // Core Graphics Private APIs
@@ -35,8 +35,7 @@ extern CGError CGSReleaseRegion(CGSRegion);
 extern CGError CGSNewWindow(CGSConnectionID, int backing, float, float, CGSRegion, CGSWindowID *);
 extern CGError CGSSetWindowOpacity(CGSConnectionID, CGSWindowID, CGSBoolean opacity);
 extern CGError CGSOrderWindow(CGSConnectionID, CGSWindowID, int ordering, CGSWindowID relative);
-
-// Window - CG
+extern CGError CGSSetWindowLevel(CGSConnectionID, CGSWindowID, CGWindowLevel);
 extern CGContextRef CGWindowContextCreate(CGSConnectionID, CGSWindowID, void *);
 
 // CGContext
