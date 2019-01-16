@@ -23,9 +23,14 @@ typedef void *CGSRegion;
 #define kCGSBufferedBackingType 2
 #define kCGSWindowOrderingAbove 1
 #define kCGCompositeCopy 1 // CGCompositeOperation
+#define kCGSIgnoreMouseEventsTag 512
 
 // Connection
 extern CGSConnectionID CGSMainConnectionID(void);
+
+// Display
+extern CGDirectDisplayID CGSMainDisplayID(void);
+extern CGError CGSGetDisplayBounds(CGDirectDisplayID, CGRect *);
 
 // Region
 extern CGError CGSNewRegionWithRect(CGRect *, CGSRegion *);
@@ -49,5 +54,8 @@ extern CGError CGSOrderSurface(CGSConnectionID, CGSWindowID, CGSSurfaceID, int, 
 
 // CGL
 extern CGLError CGLSetSurface(CGLContextObj, CGSConnectionID, CGSWindowID, CGSSurfaceID);
+
+// Tags
+extern CGError CGSSetWindowTags(CGSConnectionID, CGSWindowID, int *tags, int always32);
 
 #endif

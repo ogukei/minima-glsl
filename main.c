@@ -56,19 +56,15 @@ static CVReturn RenderFrame(CVDisplayLinkRef, const CVTimeStamp *, const CVTimeS
 
 int main(void) {
 	CGSConnectionID connection = CGSMainConnectionID();
-	CGRect frame = CGRectMake(0, 0, 400, 400);
+	CGRect display_bounds;
+	if (CGSGetDisplayBounds(CGSMainDisplayID(), &display_bounds) != kCGSErrorSuccess) {
+		display_bounds = CGRectMake(0, 0, 400, 400);
+	}
+	CGRect frame = CGRectMake(0, 0, CGRectGetWidth(display_bounds), CGRectGetHeight(display_bounds));
 	CGSWindowID window = 0;
 	MakeWindow(connection, frame, &window);
 
 	CGRect bounds = CGRectMake(0, 0, CGRectGetWidth(frame), CGRectGetHeight(frame));
-	CGContextRef context = CGWindowContextCreate(connection, window, 0);
-	CGContextSetCompositeOperation(context, kCGCompositeCopy);
-	CGContextSetRGBFillColor(context, 0.0, 0.0, 0.0, 0.0);
-	CGContextFillRect(context, bounds);
-	CGContextFlush(context);
-	CGSOrderWindow(connection, window, kCGSWindowOrderingAbove, 0);
-	CGSSetWindowLevel(connection, window, CGWindowLevelForKey(kCGOverlayWindowLevelKey));
-
 	CGLContextObj cgl_context;
 	MakeCGLContext(connection, window, bounds, &cgl_context);
 	CGLSetCurrentContext(cgl_context);
@@ -86,7 +82,7 @@ int main(void) {
 	};
 
 	CVDisplayLinkRef display;
-	CVDisplayLinkCreateWithCGDisplay(CGMainDisplayID(), &display);
+	CVDisplayLinkCreateWithCGDisplay(CGSMainDisplayID(), &display);
 	CVDisplayLinkSetOutputCallback(display, &RenderFrame, environment);
 	CVDisplayLinkStart(display);
 	sleep(7);
@@ -187,6 +183,21 @@ static bool MakeWindow(CGSConnectionID connection, CGRect frame, CGSWindowID *re
 	CGSReleaseRegion(region);
 	if (CGSSetWindowOpacity(connection, window, kCGSFalse) != kCGSErrorSuccess) {
 		return false;
+	}
+	// Present Window
+	{
+		CGRect bounds = CGRectMake(0, 0, CGRectGetWidth(frame), CGRectGetHeight(frame));
+		CGContextRef context = CGWindowContextCreate(connection, window, 0);
+		CGContextSetCompositeOperation(context, kCGCompositeCopy);
+		CGContextSetRGBFillColor(context, 0.0, 0.0, 0.0, 0.0);
+		CGContextFillRect(context, bounds);
+		CGContextFlush(context);
+		CGContextRelease(context);
+		context = NULL;
+		CGSOrderWindow(connection, window, kCGSWindowOrderingAbove, 0);
+		CGSSetWindowLevel(connection, window, CGWindowLevelForKey(kCGOverlayWindowLevelKey));
+		int tags = kCGSIgnoreMouseEventsTag;
+		CGSSetWindowTags(connection, window, &tags, 32);
 	}
 	*ref = window;
 	return true;
