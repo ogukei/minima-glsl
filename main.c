@@ -10,6 +10,22 @@
 
 #include <time.h>
 
+const char *vertex_shader =
+"#version 400\n"
+"in vec3 vp;"
+"void main() {"
+"  gl_Position = vec4(vp, 1.0);"
+"}";
+
+const char *fragment_shader =
+"#version 400\n"
+"out vec4 color;"
+"void main() {"
+"  color = vec4(1, 1, 1, 1);"
+"}";
+
+static bool MakeGL(const char *vertex_shader_str, 
+	const char *fragment_shader_str);
 static bool MakeCGLContext(CGSConnectionID, CGSWindowID, CGRect, CGLContextObj *);
 static bool MakeWindow(CGSConnectionID, CGRect, CGSWindowID *);
 static CVReturn DisplayLinkCallback(CVDisplayLinkRef, const CVTimeStamp *, const CVTimeStamp *, 
@@ -36,6 +52,12 @@ int main(void) {
 	CGContextFillRect(context, bounds);
 	CGContextFlush(context);
 	CGSOrderWindow(connection, window, kCGSWindowOrderingAbove, 0);
+	
+	CGLContextObj cgl_context;
+	MakeCGLContext(connection, window, bounds, &cgl_context);
+	CGLSetCurrentContext(cgl_context);
+	MakeGL(vertex_shader, fragment_shader);
+	CGLFlushDrawable(cgl_context);
 
 	Environment *environment = &(Environment) {
 		.connection = connection,
@@ -59,6 +81,55 @@ static CVReturn DisplayLinkCallback(CVDisplayLinkRef display,
 	Environment *environment = context;
 
 	return 0;
+}
+
+static bool MakeGL(const char *vertex_shader_str, const char *fragment_shader_str) {
+	float vertices[] = {
+    	-1.0f,  1.0f, 0.0f, // Top-left
+    	 1.0f,  1.0f, 0.0f, // Top-right
+    	 1.0f, -1.0f, 0.0f, // Bottom-right
+    	-1.0f, -1.0f, 0.0f, // Bottom-left
+	};
+	GLuint elements[] = {
+		0, 1, 2,
+		2, 3, 0
+	};
+	// Data
+	GLuint vbo = 0;
+	glGenBuffers(1, &vbo);
+	glBindBuffer(GL_ARRAY_BUFFER, vbo);
+	glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
+	GLuint ebo = 0;
+	glGenBuffers(1, &ebo);
+	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ebo);
+	glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(elements), elements, GL_STATIC_DRAW);
+	// Vertex Array
+	GLuint vao = 0;
+	glGenVertexArrays(1, &vao);
+	glBindVertexArray(vao);
+	glEnableVertexAttribArray(0);
+	
+	glBindBuffer(GL_ARRAY_BUFFER, vbo);
+	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), 0);
+	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ebo);
+
+	// Shader Compilation
+	GLuint vs = glCreateShader(GL_VERTEX_SHADER);
+	glShaderSource(vs, 1, &vertex_shader_str, NULL);
+	glCompileShader(vs);
+	GLuint fs = glCreateShader(GL_FRAGMENT_SHADER);
+	glShaderSource(fs, 1, &fragment_shader_str, NULL);
+	glCompileShader(fs);
+	GLuint shader = glCreateProgram();
+	glAttachShader(shader, fs);
+	glAttachShader(shader, vs);
+	glLinkProgram(shader);
+
+	glClear(GL_COLOR_BUFFER_BIT);
+	glUseProgram(shader);
+	glBindVertexArray(vao);
+
+	glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
 }
 
 static bool MakeWindow(CGSConnectionID connection, CGRect frame, CGSWindowID *ref) {
