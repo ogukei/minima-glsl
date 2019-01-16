@@ -1,6 +1,9 @@
 
 #define GL_SILENCE_DEPRECATION
 
+#include <stdio.h>
+#include <stdlib.h>
+#include <time.h>
 #include <CoreGraphics/CoreGraphics.h>
 #include <CoreVideo/CoreVideo.h>
 #include <OpenGL/CGLCurrent.h>
@@ -54,11 +57,13 @@ static CVReturn RenderFrame(CVDisplayLinkRef, const CVTimeStamp *, const CVTimeS
 
 int main(void) {
 	CGSConnectionID connection = CGSMainConnectionID();
+	CGRect frame = CGRectMake(0, 0, 600, 400);
 	CGRect display_bounds;
-	if (CGSGetDisplayBounds(CGSMainDisplayID(), &display_bounds) != kCGSErrorSuccess) {
-		display_bounds = CGRectMake(0, 0, 400, 400);
+	if (CGSGetDisplayBounds(CGSMainDisplayID(), &display_bounds) == kCGSErrorSuccess) {
+		CGFloat x = CGRectGetMidX(display_bounds) - CGRectGetWidth(frame) * 0.5;
+		CGFloat y = CGRectGetMidY(display_bounds) - CGRectGetHeight(frame) * 0.5;
+		frame = CGRectMake(x, y, CGRectGetWidth(frame), CGRectGetHeight(frame));
 	}
-	CGRect frame = CGRectMake(0, 0, CGRectGetWidth(display_bounds), CGRectGetHeight(display_bounds));
 	CGSWindowID window = 0;
 	MakeWindow(connection, frame, &window);
 
@@ -66,9 +71,9 @@ int main(void) {
 	CGLContextObj cgl_context;
 	MakeCGLContext(connection, window, bounds, &cgl_context);
 	CGLSetCurrentContext(cgl_context);
-	GLuint shader;
-	MakeGL(kVertexShader, kFragmentShader, &shader);
-	ShaderParameters params = MakeShaderParameters(shader);
+	GLuint program;
+	MakeGL(kVertexShader, kFragmentShader, &program);
+	ShaderParameters shader = MakeShaderParameters(program);
 	CGLSetCurrentContext(NULL);
 
 	Environment *environment = &(Environment) {
@@ -76,14 +81,14 @@ int main(void) {
 		.window = window,
 		.bounds = bounds,
 		.context = cgl_context,
-		.shader = params
+		.shader = shader
 	};
 
 	CVDisplayLinkRef display;
 	CVDisplayLinkCreateWithCGDisplay(CGSMainDisplayID(), &display);
 	CVDisplayLinkSetOutputCallback(display, &RenderFrame, environment);
 	CVDisplayLinkStart(display);
-	sleep(7);
+	sleep(1000);
 	CVDisplayLinkStop(display);
 	return 0;
 }
@@ -110,7 +115,7 @@ static CVReturn RenderFrame(CVDisplayLinkRef display,
 	return 0;
 }
 
-static bool MakeGL(const char *vertex_shader_str, const char *fragment_shader_str, GLuint *program_ref) {
+static bool MakeGL(const char *vertex_shader, const char *fragment_shader, GLuint *program_ref) {
 	float vertices[] = {
     	-1.0f,  1.0f, 0.0f, // Top-left
     	 1.0f,  1.0f, 0.0f, // Top-right
@@ -125,7 +130,7 @@ static bool MakeGL(const char *vertex_shader_str, const char *fragment_shader_st
 	GLuint vao = 0;
 	glGenVertexArrays(1, &vao);
 	glBindVertexArray(vao);
-	// Data
+	// Data Transfer
 	GLuint vbo = 0;
 	glGenBuffers(1, &vbo);
 	glBindBuffer(GL_ARRAY_BUFFER, vbo);
@@ -139,11 +144,11 @@ static bool MakeGL(const char *vertex_shader_str, const char *fragment_shader_st
 	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), 0);
 	// Shader Compilation
 	GLuint vs = glCreateShader(GL_VERTEX_SHADER);
-	glShaderSource(vs, 1, &vertex_shader_str, NULL);
+	glShaderSource(vs, 1, &vertex_shader, NULL);
 	glCompileShader(vs);
 	assert(VerifyShader(vs, "vertex"));
 	GLuint fs = glCreateShader(GL_FRAGMENT_SHADER);
-	glShaderSource(fs, 1, &fragment_shader_str, NULL);
+	glShaderSource(fs, 1, &fragment_shader, NULL);
 	glCompileShader(fs);
 	assert(VerifyShader(fs, "fragment"));
 	GLuint program = glCreateProgram();
@@ -177,7 +182,7 @@ static bool VerifyShader(GLuint shader, const char *label) {
 	glGetShaderiv(shader, GL_INFO_LOG_LENGTH, &max_length);
 	char *buffer = malloc(max_length);
 	glGetShaderInfoLog(shader, max_length, &max_length, buffer);
-	fprintf(stderr, "%s shader error: \n%s\n", label, buffer);
+	fprintf(stderr, "%s shader compilation error: \n%s\n", label, buffer);
 	free(buffer);
 	return false;
 }
