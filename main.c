@@ -20,24 +20,35 @@ const char *vertex_shader =
 const char *fragment_shader =
 "#version 400\n"
 "out vec4 color;"
+"uniform vec4 bounds;"
 "void main() {"
-"  color = vec4(1, 1, 1, 1);"
+"  vec2 v = gl_FragCoord.xy / bounds.zw;"
+"  vec2 c = vec2(0.5, 0.5);"
+"  float d = distance(c, v);"
+"  color = vec4(d, 0, 0, d);"
 "}";
 
-static bool MakeGL(const char *vertex_shader_str, 
-	const char *fragment_shader_str);
-static bool MakeCGLContext(CGSConnectionID, CGSWindowID, CGRect, CGLContextObj *);
-static bool MakeWindow(CGSConnectionID, CGRect, CGSWindowID *);
-static CVReturn DisplayLinkCallback(CVDisplayLinkRef, const CVTimeStamp *, const CVTimeStamp *, 
-	CVOptionFlags, CVOptionFlags *, void *);
+typedef struct {
+	GLuint bounds;
+}
+ShaderParameters;
 
 typedef struct {
 	CGSConnectionID connection;
 	CGSWindowID window;
 	CGRect bounds;
-	CGContextRef context;
+	CGLContextObj context;
+	ShaderParameters shader;
 }
 Environment;
+
+static bool MakeGL(const char *vertex_shader_str, 
+	const char *fragment_shader_str, GLuint *program_ref);
+static ShaderParameters MakeShaderParameters(GLuint program);
+static bool MakeCGLContext(CGSConnectionID, CGSWindowID, CGRect, CGLContextObj *);
+static bool MakeWindow(CGSConnectionID, CGRect, CGSWindowID *);
+static CVReturn DisplayLinkCallback(CVDisplayLinkRef, const CVTimeStamp *, const CVTimeStamp *, 
+	CVOptionFlags, CVOptionFlags *, void *);
 
 int main(void) {
 	CGSConnectionID connection = CGSMainConnectionID();
@@ -48,7 +59,7 @@ int main(void) {
 	CGRect bounds = CGRectMake(0, 0, CGRectGetWidth(frame), CGRectGetHeight(frame));
 	CGContextRef context = CGWindowContextCreate(connection, window, 0);
 	CGContextSetCompositeOperation(context, kCGCompositeCopy);
-	CGContextSetRGBFillColor(context, 0.0, 1.0, 0.0, 0.5);
+	CGContextSetRGBFillColor(context, 0.0, 0.0, 0.0, 0.0);
 	CGContextFillRect(context, bounds);
 	CGContextFlush(context);
 	CGSOrderWindow(connection, window, kCGSWindowOrderingAbove, 0);
@@ -56,14 +67,17 @@ int main(void) {
 	CGLContextObj cgl_context;
 	MakeCGLContext(connection, window, bounds, &cgl_context);
 	CGLSetCurrentContext(cgl_context);
-	MakeGL(vertex_shader, fragment_shader);
-	CGLFlushDrawable(cgl_context);
+	GLuint shader;
+	MakeGL(vertex_shader, fragment_shader, &shader);
+	ShaderParameters params = MakeShaderParameters(shader);
+	CGLSetCurrentContext(NULL);
 
 	Environment *environment = &(Environment) {
 		.connection = connection,
 		.window = window,
 		.bounds = bounds,
-		.context = context
+		.context = cgl_context,
+		.shader = params
 	};
 
 	CVDisplayLinkRef display;
@@ -71,19 +85,33 @@ int main(void) {
 	CVDisplayLinkSetOutputCallback(display, &DisplayLinkCallback, environment);
 	CVDisplayLinkStart(display);
 	sleep(1);
+	CVDisplayLinkStop(display);
 	return 0;
 }
 
 
 static CVReturn DisplayLinkCallback(CVDisplayLinkRef display, 
 	const CVTimeStamp *time_now, const CVTimeStamp *time_output, 
-	CVOptionFlags inputs, CVOptionFlags *outputs, void *context) {
-	Environment *environment = context;
+	CVOptionFlags inputs, CVOptionFlags *outputs, void *user_context) {
+	Environment *environment = user_context;
+	CGLContextObj context = environment->context;
+	ShaderParameters *shader = &environment->shader;
+	CGRect bounds = environment->bounds;
+	double time = time_output->hostTime / (double)CVGetHostClockFrequency();
+	CGLLockContext(context);
+	CGLSetCurrentContext(context);
 
+	glClear(GL_COLOR_BUFFER_BIT);
+	glUniform4f(shader->bounds, 0, 0, CGRectGetWidth(bounds), CGRectGetHeight(bounds));
+	glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
+	CGLFlushDrawable(context);
+
+	CGLSetCurrentContext(NULL);
+	CGLUnlockContext(context);
 	return 0;
 }
 
-static bool MakeGL(const char *vertex_shader_str, const char *fragment_shader_str) {
+static bool MakeGL(const char *vertex_shader_str, const char *fragment_shader_str, GLuint *shader_ref) {
 	float vertices[] = {
     	-1.0f,  1.0f, 0.0f, // Top-left
     	 1.0f,  1.0f, 0.0f, // Top-right
@@ -94,6 +122,10 @@ static bool MakeGL(const char *vertex_shader_str, const char *fragment_shader_st
 		0, 1, 2,
 		2, 3, 0
 	};
+	// Vertex Array
+	GLuint vao = 0;
+	glGenVertexArrays(1, &vao);
+	glBindVertexArray(vao);
 	// Data
 	GLuint vbo = 0;
 	glGenBuffers(1, &vbo);
@@ -103,16 +135,9 @@ static bool MakeGL(const char *vertex_shader_str, const char *fragment_shader_st
 	glGenBuffers(1, &ebo);
 	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ebo);
 	glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(elements), elements, GL_STATIC_DRAW);
-	// Vertex Array
-	GLuint vao = 0;
-	glGenVertexArrays(1, &vao);
-	glBindVertexArray(vao);
+	// Vertex Attributes
 	glEnableVertexAttribArray(0);
-	
-	glBindBuffer(GL_ARRAY_BUFFER, vbo);
 	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), 0);
-	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ebo);
-
 	// Shader Compilation
 	GLuint vs = glCreateShader(GL_VERTEX_SHADER);
 	glShaderSource(vs, 1, &vertex_shader_str, NULL);
@@ -124,12 +149,23 @@ static bool MakeGL(const char *vertex_shader_str, const char *fragment_shader_st
 	glAttachShader(shader, fs);
 	glAttachShader(shader, vs);
 	glLinkProgram(shader);
+	// Settings
+	glEnable(GL_BLEND);
+	glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
 
-	glClear(GL_COLOR_BUFFER_BIT);
 	glUseProgram(shader);
 	glBindVertexArray(vao);
+	//glClear(GL_COLOR_BUFFER_BIT);
+	//glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
 
-	glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
+	*shader_ref = shader;
+	return true;
+}
+
+static ShaderParameters MakeShaderParameters(GLuint program) {
+	return (ShaderParameters) {
+		.bounds = glGetUniformLocation(program, "bounds")
+	};
 }
 
 static bool MakeWindow(CGSConnectionID connection, CGRect frame, CGSWindowID *ref) {
