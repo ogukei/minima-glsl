@@ -1,10 +1,16 @@
 
+#define GL_SILENCE_DEPRECATION
+
 #include <CoreGraphics/CoreGraphics.h>
 #include <CoreVideo/CoreVideo.h>
+#include <OpenGL/CGLCurrent.h>
+#include <OpenGL/gl3.h>
+
 #include "private.h"
 
 #include <time.h>
 
+static bool MakeCGLContext(CGSConnectionID, CGSWindowID, CGRect, CGLContextObj *);
 static bool MakeWindow(CGSConnectionID, CGRect, CGSWindowID *);
 static CVReturn DisplayLinkCallback(CVDisplayLinkRef, const CVTimeStamp *, const CVTimeStamp *, 
 	CVOptionFlags, CVOptionFlags *, void *);
@@ -70,5 +76,57 @@ static bool MakeWindow(CGSConnectionID connection, CGRect frame, CGSWindowID *re
 		return false;
 	}
 	*ref = window;
+	return true;
+}
+
+static bool MakeCGLContext(CGSConnectionID connection, CGSWindowID window, CGRect bounds, CGLContextObj *ref) {
+	CGLPixelFormatAttribute attributes[] = {
+		kCGLPFAOpenGLProfile, (CGLPixelFormatAttribute)kCGLOGLPVersion_3_2_Core,
+		kCGLPFAColorSize, 24,
+		kCGLPFAAlphaSize, 8,
+		kCGLPFADoubleBuffer,
+		kCGLPFAAccelerated,
+		kCGLPFASampleBuffers, 1,
+		kCGLPFASamples, 4,
+		(CGLPixelFormatAttribute)0
+	};
+	// Context Allocation
+	CGLPixelFormatObj format;
+	GLint nvirt; // number of virtual screens
+ 	if (CGLChoosePixelFormat(attributes, &format, &nvirt) != kCGLNoError) {
+		return false;	 
+	}
+	CGLContextObj context;
+	if (CGLCreateContext(format, NULL, &context) != kCGLNoError) {
+		return false;
+	}
+	CGLDestroyPixelFormat(format);
+	format = NULL;
+	// Context Setup
+	CGLSetCurrentContext(context);
+	// V-Sync
+	GLint v_sync_enabled = 1;
+	CGLSetParameter(context, kCGLCPSwapInterval, &v_sync_enabled);
+	// Opaque
+	GLint opaque = 0;
+	CGLSetParameter(context, kCGLCPSurfaceOpacity, &opaque);
+	// Surface Setup
+	CGSSurfaceID surface;
+	if (CGSAddSurface(connection, window, &surface) != kCGSErrorSuccess) {
+		return false;
+	}
+	CGSSetSurfaceBounds(connection, window, surface, bounds);
+	CGSOrderSurface(connection, window, surface, 1, 0);
+	CGLSetSurface(context, connection, window, surface);
+	// Checks
+	GLint drawable;
+	if (CGLGetParameter(context, kCGLCPHasDrawable, &drawable) != kCGLNoError) {
+		return false;
+	}
+	if (drawable == 0) {
+		return false;
+	}
+	CGLSetCurrentContext(NULL);
+	*ref = context;
 	return true;
 }
