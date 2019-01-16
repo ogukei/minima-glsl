@@ -8,8 +8,6 @@
 
 #include "private.h"
 
-#include <time.h>
-
 static const char *kVertexShader =
 "#version 400\n"
 "in vec3 vp;"
@@ -46,9 +44,9 @@ typedef struct {
 }
 Environment;
 
-static bool MakeGL(const char *vertex_shader_str, 
-	const char *fragment_shader_str, GLuint *program_ref);
+static bool MakeGL(const char *vertex_shader, const char *fragment_shader, GLuint *program);
 static ShaderParameters MakeShaderParameters(GLuint program);
+static bool VerifyShader(GLuint shader, const char *label);
 static bool MakeCGLContext(CGSConnectionID, CGSWindowID, CGRect, CGLContextObj *);
 static bool MakeWindow(CGSConnectionID, CGRect, CGSWindowID *);
 static CVReturn RenderFrame(CVDisplayLinkRef, const CVTimeStamp *, const CVTimeStamp *, 
@@ -112,7 +110,7 @@ static CVReturn RenderFrame(CVDisplayLinkRef display,
 	return 0;
 }
 
-static bool MakeGL(const char *vertex_shader_str, const char *fragment_shader_str, GLuint *shader_ref) {
+static bool MakeGL(const char *vertex_shader_str, const char *fragment_shader_str, GLuint *program_ref) {
 	float vertices[] = {
     	-1.0f,  1.0f, 0.0f, // Top-left
     	 1.0f,  1.0f, 0.0f, // Top-right
@@ -143,23 +141,24 @@ static bool MakeGL(const char *vertex_shader_str, const char *fragment_shader_st
 	GLuint vs = glCreateShader(GL_VERTEX_SHADER);
 	glShaderSource(vs, 1, &vertex_shader_str, NULL);
 	glCompileShader(vs);
+	assert(VerifyShader(vs, "vertex"));
 	GLuint fs = glCreateShader(GL_FRAGMENT_SHADER);
 	glShaderSource(fs, 1, &fragment_shader_str, NULL);
 	glCompileShader(fs);
-	GLuint shader = glCreateProgram();
-	glAttachShader(shader, fs);
-	glAttachShader(shader, vs);
-	glLinkProgram(shader);
+	assert(VerifyShader(fs, "fragment"));
+	GLuint program = glCreateProgram();
+	glAttachShader(program, fs);
+	glDeleteShader(fs);
+	glAttachShader(program, vs);
+	glDeleteShader(vs);
+	glLinkProgram(program);
 	// Settings
 	glEnable(GL_BLEND);
 	glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
-
-	glUseProgram(shader);
+	// Done
+	glUseProgram(program);
 	glBindVertexArray(vao);
-	//glClear(GL_COLOR_BUFFER_BIT);
-	//glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
-
-	*shader_ref = shader;
+	*program_ref = program;
 	return true;
 }
 
@@ -168,6 +167,19 @@ static ShaderParameters MakeShaderParameters(GLuint program) {
 		.bounds = glGetUniformLocation(program, "bounds"),
 		.time = glGetUniformLocation(program, "time")
 	};
+}
+
+static bool VerifyShader(GLuint shader, const char *label) {
+	GLint compiled = 0;
+	glGetShaderiv(shader, GL_COMPILE_STATUS, &compiled);
+	if (compiled != GL_FALSE) return true;
+	GLint max_length = 0;
+	glGetShaderiv(shader, GL_INFO_LOG_LENGTH, &max_length);
+	char *buffer = malloc(max_length);
+	glGetShaderInfoLog(shader, max_length, &max_length, buffer);
+	fprintf(stderr, "%s shader error: \n%s\n", label, buffer);
+	free(buffer);
+	return false;
 }
 
 static bool MakeWindow(CGSConnectionID connection, CGRect frame, CGSWindowID *ref) {
@@ -194,10 +206,10 @@ static bool MakeWindow(CGSConnectionID connection, CGRect frame, CGSWindowID *re
 		CGContextFlush(context);
 		CGContextRelease(context);
 		context = NULL;
-		CGSOrderWindow(connection, window, kCGSWindowOrderingAbove, 0);
 		CGSSetWindowLevel(connection, window, CGWindowLevelForKey(kCGOverlayWindowLevelKey));
 		int tags = kCGSIgnoreMouseEventsTag;
 		CGSSetWindowTags(connection, window, &tags, 32);
+		CGSOrderWindow(connection, window, kCGSWindowOrderingAbove, 0);
 	}
 	*ref = window;
 	return true;
