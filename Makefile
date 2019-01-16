@@ -21,4 +21,5 @@ $(TARGET): $(BUILD_DIR)/main.o
 	$(CC) $(BUILD_DIR)/main.o \
 		-framework CoreGraphics \
 		-framework OpenGL \
+		-framework CoreVideo \
 		-o $(TARGET)
