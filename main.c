@@ -225,7 +225,7 @@ static bool MakeCGL(CGSConnectionID connection, CGSWindowID window, CGRect bound
     // Context Allocation
     CGLPixelFormatObj format;
     GLint nvirt; // number of virtual screens
-     if (CGLChoosePixelFormat(attributes, &format, &nvirt) != kCGLNoError) {
+    if (CGLChoosePixelFormat(attributes, &format, &nvirt) != kCGLNoError) {
         return false;	 
     }
     CGLContextObj context;
